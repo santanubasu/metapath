@@ -100,7 +100,7 @@ var buildFrom = module.exports.buildFrom = function(base, dir) {
     var mappings = {};
     var files = glob.sync(dir+"/**/*")
     files.forEach(function(file) {
-        mappings[path.join("/", path.relative(dir, file))] = path.join("/", path.relative(base, file));
+        mappings[path.join("/", path.relative(dir, file))] = path.normalize(path.join("/", path.relative(base, file)));
     });
 
     return mappings;
@@ -137,7 +137,7 @@ var prefix = module.exports.prefix = function(metapath, keyPrefix, valuePrefix) 
     valuePrefix = valuePrefix||"";
     var prefixedMetapath = {};
     for (var key in metapath) {
-        prefixedMetapath[keyPrefix+key] = valuePrefix+metapath[key];
+        prefixedMetapath[keyPrefix+key] = path.normalize(valuePrefix+metapath[key]);
     }
     return prefixedMetapath;
 }
