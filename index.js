@@ -106,3 +106,14 @@ var prefix = module.exports.prefix = function(metapath, keyPrefix, valuePrefix) 
     return prefixedMetapath;
 }
 
+var replace = module.exports.replace = function(source, metapaths) {
+    return source.replace(/"(\s*metapath:\/\/[^"]+)"/g, function(match, path) {
+        if (path in metapaths) {
+            return "\""+metapaths[path]+"\"";
+        }
+        else {
+            console.log("Unable to resolve metapath: "+path);
+            return "\""+path+"\"";
+        }
+    })
+}
