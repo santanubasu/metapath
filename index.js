@@ -1,51 +1,15 @@
 var _ = require("underscore");
 var resolve = require('resolve');
 var path = require("path");
-
-function _getCallerDirname() {
-    try {
-        var err = new Error();
-        var callerFile;
-        var currentFile;
-
-        Error.prepareStackTrace = function (err, stack) { return stack; };
-
-        currentFile = err.stack.shift().getFileName();
-
-        while (err.stack.length) {
-            callerFile = err.stack.shift().getFileName();
-            if (currentFile !== callerFile) {
-                return path.dirname(callerFile);
-            }
-        }
-    }
-    catch (err) {
-    }
-    return undefined;
-}
-
-function _resolveDependencyRoot(dependency) {
-    var callerDirname = _getCallerDirname();
-    var dependencyPath = resolve.sync(dependency, {
-        basedir:callerDirname
-    });
-    var fullPath = path.dirname(dependencyPath);
-    var parts = fullPath.split("/");
-    for (var i=parts.length; i>0; i--) {
-        if (parts[i-1]==="node_modules") {
-            break;
-        }
-    }
-    var dependencyRoot = parts.slice(0, i+1).join("/");
-    return dependencyRoot;
-}
+var pick = require("pick-require");
+var pickUtil = pick("pick-require", "util.js");
 
 module.exports = {
     require:function(dependency) {
-        var callerDirname = _getCallerDirname();
-        var dependencyRoot = _resolveDependencyRoot(dependency);
+        var callerDirname = pickUtil.getCallerDirname(1);
+        var dependencyRoot = pickUtil.resolveDependencyRoot(dependency, callerDirname);
         return prefix(
-            require(path.join(dependencyRoot, "/metapath.js")),
+            require(path.join(dependencyRoot, "metapath.js")),
             "",
             path.relative(callerDirname, dependencyRoot)+"/"
         );
@@ -53,7 +17,7 @@ module.exports = {
     from:function(target) {
         var paths = [];
         var prefixes = [];
-        var callerDirname = _getCallerDirname();
+        var callerDirname = pickUtil.getCallerDirname(1);
         var base;
         var pathPrefix;
         if (target.indexOf("/")!==-1) {
@@ -61,7 +25,7 @@ module.exports = {
             pathPrefix = path.relative(callerDirname, base);
         }
         else {
-            base = _resolveDependencyRoot(target);
+            base = pickUtil.resolveDependencyRoot(target, callerDirname);
             pathPrefix = path.relative(callerDirname, base);
         }
         return {
