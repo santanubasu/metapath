@@ -2,6 +2,10 @@
   "name": "metapath",
   "version": "0.1.0",
   "private": true,
+  "repository":{
+    "type" : "git",
+    "url" : "git@github.com:santanubasu/metapath.git"
+  },
   "dependencies": {
     "underscore":"1.8.2",
     "glob":"5.0.10",

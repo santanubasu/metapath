@@ -1,5 +1,4 @@
 var _ = require("underscore");
-var resolve = require('resolve');
 var path = require("path");
 var pick = require("pick-require");
 var pickUtil = pick("pick-require", "util.js");
