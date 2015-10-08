@@ -21,7 +21,7 @@ module.exports = {
         var pathPrefix;
         if (target.indexOf("/")!==-1) {
             base = target;
-            pathPrefix = path.relative(callerDirname, base);
+            pathPrefix = path.normalize(path.join(".", path.relative(callerDirname, base)));
         }
         else {
             base = pickUtil.resolveDependencyRoot(target, callerDirname);
