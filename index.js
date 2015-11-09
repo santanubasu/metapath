@@ -4,7 +4,9 @@ var _ = require("underscore");
 var pick = require("pick-require");
 var pickUtil = pick("pick-require", "util.js");
 
-var activeMetapaths = {};
+var metacache = {};
+var registeredMetapaths = {};
+var active = "";
 
 // Require hijacking below is based on https://github.com/bahmutov/really-need
 
@@ -45,35 +47,45 @@ function load(transform, module, filename) {
     }
 }
 
-Module.prototype.require = function(name, options) {
+Module.prototype.require = function(name, key, options) {
 
     options = options||{};
 
-    if (options.metapaths) {
-        activeMetapaths = options.metapaths;
+    if (key) {
+        active = key;
+        if (options.metapaths) {
+            registeredMetapaths[key] = options.metapaths;
+        }
     }
 
     var nameToLoad;
+    var result;
 
-    if (name in activeMetapaths) {
-        nameToLoad = activeMetapaths[name];
-    }
-    else if (name.indexOf("metapath:///")!==0) {
-        nameToLoad = Module._resolveFilename(name, this);
-    }
-    else {
-        if (options.default) {
-            return options.default
+    if (name.indexOf("metapath:///")===0) {
+        if (name in registeredMetapaths[active]) {
+            nameToLoad = Module._resolveFilename(registeredMetapaths[active][name], this);
+            if (nameToLoad in metacache[active]) {
+                result = metacache[active][nameToLoad];
+            }
+            else {
+                delete require.cache[nameToLoad];
+                result = Module._load(nameToLoad, this);
+                metacache[active][nameToLoad] = result;
+            }
         }
         else {
-            throw "Metapath could not be found in active set.";
+            if (options.default) {
+                result = options.default
+            }
+            else {
+                throw "Metapath "+name+" could not be found in active set.";
+            }
         }
     }
-
-    var extension = '.js';
-    var prevPre = Module._extensions[extension];
-
-    var result = _require.call(this, nameToLoad);
+    else {
+        nameToLoad = Module._resolveFilename(name, this);
+        result = _require.call(this, nameToLoad);
+    }
 
     return result;
 };
@@ -98,8 +110,15 @@ metapathRequire.cache = require.cache;
 
 module.exports = {
     require:metapathRequire,
-    setActive:function(active) {
-        activeMetapaths = active;
+    register:function(key, metapath) {
+        metacache[key] = {};
+        registeredMetapaths[key] = metapath;
+    },
+    activate:function(key, metapath) {
+        active = key;
+        if (metapath) {
+            module.exports.register(key, metapath);
+        }
     },
     import:function(dependency) {
         var callerDirname = pickUtil.getCallerDirname(1);
