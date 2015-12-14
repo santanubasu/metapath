@@ -8,6 +8,6 @@
   "dependencies": {
     "underscore":"1.8.2",
     "glob":"5.0.10",
-    "pick-require":"git@github.com:santanubasu/pick-require.git"
+    "pick-require":"https://github.com/santanubasu/pick-require.git"
   }
 }
