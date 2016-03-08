@@ -1,12 +1,183 @@
+Error.stackTraceLimit = 1000;
+Object.defineProperty(global, "__stack", {
+    get: function(){
+        var orig = Error.prepareStackTrace;
+        Error.prepareStackTrace = function(_, stack){ return stack; };
+        var err = new Error;
+        Error.captureStackTrace(err, arguments.callee);
+        var stack = err.stack;
+        Error.prepareStackTrace = orig;
+        return stack;
+    }
+});
+
 var path = require("path");
+var resolve = require("resolve");
 var _ = require("underscore");
-var pick = require("pick-require");
-var pickUtil = pick("pick-require", "util.js");
+var extend = require("node.extend");
+var check = require("check-more-types");
+var Module = require("module");
+
+var tenantCache = {};
+var tenantMetapaths = {};
+var activeTenant = "";
+tenantCache[activeTenant] = {};
+
+function getCallerDirname(skip) {
+    return path.dirname(getCallerFilename())
+}
+
+function getCallerFilename(skip) {
+    skip = skip||0;
+    var callerFileName;
+    var index = 0;
+    var entries = __stack.map(function(cs) {
+        return cs.getFileName()
+    })
+    while (!callerFileName) {
+        var entry = entries[index];
+        index++;
+        if (entry&&entry.indexOf("native")<0&&entry!==__filename) {
+            callerFileName = entry;
+        }
+    }
+    return callerFileName;
+}
+
+function resolveDependencyRoot(dependency, from) {
+    var callerDirname = from||getCallerDirname();
+    var dependencyPath = resolve.sync(dependency, {
+        basedir:callerDirname
+    });
+    var fullPath = path.dirname(dependencyPath);
+    var parts = fullPath.split("/");
+    for (var i=parts.length; i>0; i--) {
+        if (parts[i-1]==="node_modules") {
+            break;
+        }
+    }
+    var dependencyRoot = parts.slice(0, i+1).join("/");
+    return dependencyRoot;
+}
+
 
 module.exports = {
+    require: _.once(function() {
+        // Require hijacking is based on https://github.com/bahmutov/really-need
+
+        // these variables are needed inside eval _compile
+        /* jshint -W098 */
+        var runInNewContext = require('vm').runInNewContext;
+        var runInThisContext = require('vm').runInThisContext;
+        var path = require('path');
+        var shebangRe = /^\#\!.*/;
+
+        var _require = Module.prototype.require;
+        var _compile = Module.prototype._compile;
+
+        function noop() {}
+
+        function logger(options) {
+            return check.object(options) &&
+            (options.debug || options.verbose) ? console.log : noop;
+        }
+
+        function argsToDeclaration(args) {
+            var names = Object.keys(args);
+            return names.map(function (name) {
+                    var val = args[name];
+                    var value = check.fn(val) ? val.toString() : JSON.stringify(val);
+                    return 'var ' + name + ' = ' + value + ';';
+                }).join('\n') + '\n';
+        }
+
+        function load(transform, module, filename) {
+            var fs = require('fs');
+            var source = fs.readFileSync(filename, 'utf8');
+            var transformed = transform(source, filename);
+            if (check.string(transformed)) {
+                module._compile(transformed, filename);
+            } else {
+                console.error('transforming source from', filename, 'has not returned a string');
+                module._compile(source, filename);
+            }
+        }
+
+        Module.prototype.require = function(name, tenantArg, options) {
+
+            options = options||{};
+
+            if (_.isString(tenantArg)) {
+                activeTenant = tenantArg;
+            }
+
+            var nameToLoad;
+            var result;
+
+            try {
+                if (tenantMetapaths[activeTenant] && name in tenantMetapaths[activeTenant]) {
+                    var callerFilename = getCallerFilename();
+                    var absolutePath = tenantMetapaths[activeTenant][name].absolute;
+                    if (callerFilename in tenantMetapaths[activeTenant][name].supers.absolute) {
+                        absolutePath = tenantMetapaths[activeTenant][name].supers.absolute[callerFilename].absolute;
+                    }
+                    nameToLoad = Module._resolveFilename(absolutePath, this);
+                }
+                else {
+                    nameToLoad = Module._resolveFilename(name, this);
+                }
+            }
+            catch (e) {
+                throw "Unable to resolve dependency "+name+" in dynamic require.";
+            }
+
+            try {
+                if (tenantCache[activeTenant] && nameToLoad in tenantCache[activeTenant]) {
+                    result = tenantCache[activeTenant][nameToLoad];
+                }
+                else {
+                    result = Module._load(nameToLoad, this);
+                    tenantCache[activeTenant][nameToLoad] = result;
+                    delete require.cache[nameToLoad];
+                }
+            }
+            catch (e) {
+                console.log("Unable to load dependency "+name+" in dynamic require, resolved name was "+nameToLoad);
+                throw e;
+            }
+
+            return result;
+        };
+
+        var resolvedArgv;
+
+        // see Module.prototype._compile in
+        // https://github.com/joyent/node/blob/master/lib/module.js
+        var _compileStr = _compile.toString();
+        _compileStr = _compileStr.replace('self.require(path);', 'self.require.apply(self, arguments);');
+
+        /* jshint -W061 */
+        var patchedCompile = eval('(' + _compileStr + ')');
+
+        Module.prototype._compile = function (content, filename) {
+            var result = patchedCompile.call(this, content, filename);
+            return result;
+        };
+
+        var dynamicRequire = Module.prototype.require.bind(module.parent);
+        dynamicRequire.cache = require.cache;
+        return dynamicRequire;
+    }),
+    configureTenant:function(tenant, tenantMetapath) {
+        tenantCache[tenant] = {};
+        tenantMetapaths[tenant] = tenantMetapath;
+    },
+    activateTenant:function(tenant) {
+        activeTenant = tenant;
+    },
     import:function(dependency) {
-        var callerDirname = pickUtil.getCallerDirname(1);
-        var dependencyRoot = pickUtil.resolveDependencyRoot(dependency, callerDirname);
+        var callerDirname = getCallerDirname(1);
+        var dependencyRoot = resolveDependencyRoot(dependency, callerDirname);
         return prefix(
             require(path.join(dependencyRoot, "metapath.js")),
             "",
@@ -16,7 +187,7 @@ module.exports = {
     from:function(target) {
         var paths = [];
         var prefixes = [];
-        var callerDirname = pickUtil.getCallerDirname(1);
+        var callerDirname = getCallerDirname(1);
         var base;
         var pathPrefix;
         if (target.indexOf("/")!==-1) {
@@ -24,7 +195,7 @@ module.exports = {
             pathPrefix = path.normalize(path.join(".", path.relative(callerDirname, base)));
         }
         else {
-            base = pickUtil.resolveDependencyRoot(target, callerDirname);
+            base = resolveDependencyRoot(target, callerDirname);
             pathPrefix = path.relative(callerDirname, base);
         }
         return {
@@ -63,7 +234,16 @@ var buildFrom = module.exports.buildFrom = function(base, dir) {
     var mappings = {};
     var files = glob.sync(dir+"/**/*")
     files.forEach(function(file) {
-        mappings[path.join("/", path.relative(dir, file))] = path.normalize(path.join("/", path.relative(base, file)));
+        var key = path.join("/", path.relative(dir, file));
+        var mapping = {
+            relative:path.normalize(path.join("/", path.relative(base, file))),
+            absolute:file,
+            supers:{
+                relative:{},
+                absolute:{}
+            }
+        }
+        mappings[key] = mapping;
     });
 
     return mappings;
@@ -74,15 +254,22 @@ var compose = module.exports.compose = function(source, target) {
         return composeAll(source, target);
     }
     target = target||{};
-    if (_.isString(source)) {
-        return source;
-    }
     for (var key in source) {
         if (key in target) {
-            target[key] = compose(source[key], target[key]);
+            var superAbsolute = target[key].absolute;
+            var superRelative = target[key].relative;
+            extend(true, target[key], source[key]);
+            target[key].supers.absolute[source[key].absolute] = {
+                absolute:superAbsolute,
+                relative:superRelative
+            };
+            target[key].supers.relative[source[key].relative] = {
+                absolute:superAbsolute,
+                relative:superRelative
+            };
         }
         else {
-            target[key] = compose(source[key], {});
+            target[key] = extend(true, {}, source[key])
         }
     }
     return target;
@@ -100,19 +287,40 @@ var prefix = module.exports.prefix = function(metapath, keyPrefix, valuePrefix) 
     valuePrefix = valuePrefix||"";
     var prefixedMetapath = {};
     for (var key in metapath) {
-        prefixedMetapath[keyPrefix+key] = path.normalize(valuePrefix+metapath[key]);
+        prefixedMetapath[keyPrefix+key] = {
+            relative:path.normalize(valuePrefix+metapath[key].relative),
+            absolute:metapath[key].absolute,
+            supers:extend(true, {}, metapath[key].supers)
+        };
     }
     return prefixedMetapath;
 }
 
-var replace = module.exports.replace = function(source, metapaths) {
-    return source.replace(/"(\s*metapath:\/\/[^"]+)"/g, function(match, path) {
-        if (path in metapaths) {
-            return "\""+metapaths[path]+"\"";
+var replace = module.exports.replace = function(source, sourcePath, metapaths, type) {
+    type = type||"absolute";
+    return source.replace(/"(\s*metapath:\/\/[^"]+)"/g, function(match, metapath) {
+        if (metapath in metapaths) {
+            var resolvedPath = metapaths[metapath][type];
+            if (sourcePath in metapaths[metapath].supers.absolute) {
+                resolvedPath = metapaths[metapath].supers.absolute[sourcePath][type];
+            }
+            return "\""+resolvedPath+"\"";
         }
         else {
-            console.log("Unable to resolve metapath: "+path);
-            return "\""+path+"\"";
+            console.log("Unable to resolve metapath: "+metapath);
+            return "\""+metapath+"\"";
         }
+    })
+}
+
+var getAbsoluteMap = module.exports.getAbsoluteMap = function(metapaths) {
+    return _.mapObject(metapaths, function(mapping, key) {
+        return mapping.absolute
+    })
+}
+
+var getRelativeMap = module.exports.getRelativeMap = function(metapaths) {
+    return _.mapObject(metapaths, function(mapping, key) {
+        return mapping.relative
     })
 }
