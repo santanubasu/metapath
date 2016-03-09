@@ -296,13 +296,16 @@ var prefix = module.exports.prefix = function(metapath, keyPrefix, valuePrefix) 
     return prefixedMetapath;
 }
 
-var replace = module.exports.replace = function(source, sourcePath, metapaths, type) {
+var replace = module.exports.replace = function(source, sourcePath, metapaths, type, base) {
     type = type||"absolute";
     return source.replace(/"(\s*metapath:\/\/[^"]+)"/g, function(match, metapath) {
         if (metapath in metapaths) {
             var resolvedPath = metapaths[metapath][type];
             if (sourcePath in metapaths[metapath].supers.absolute) {
                 resolvedPath = metapaths[metapath].supers.absolute[sourcePath][type];
+            }
+            if ("relative"===type&&base) {
+                resolvedPath = path.relative(base, resolvedPath);
             }
             return "\""+resolvedPath+"\"";
         }
