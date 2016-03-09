@@ -298,22 +298,27 @@ var prefix = module.exports.prefix = function(metapath, keyPrefix, valuePrefix) 
 
 var replace = module.exports.replace = function(source, sourcePath, metapaths, type, base) {
     type = type||"absolute";
-    return source.replace(/"(\s*metapath:\/\/[^"]+)"/g, function(match, metapath) {
-        if (metapath in metapaths) {
-            var resolvedPath = metapaths[metapath][type];
-            if (sourcePath in metapaths[metapath].supers.absolute) {
-                resolvedPath = metapaths[metapath].supers.absolute[sourcePath][type];
+    function buildReplacer(delimitter) {
+        return function(match, metapath) {
+            if (metapath in metapaths) {
+                var resolvedPath = metapaths[metapath][type];
+                if (sourcePath in metapaths[metapath].supers.absolute) {
+                    resolvedPath = metapaths[metapath].supers.absolute[sourcePath][type];
+                }
+                if ("relative"===type&&base) {
+                    resolvedPath = path.relative(base, resolvedPath);
+                }
+                return delimitter+resolvedPath;
             }
-            if ("relative"===type&&base) {
-                resolvedPath = path.relative(base, resolvedPath);
+            else {
+                console.log("Unable to resolve metapath: "+metapath);
+                return delimitter+metapath;
             }
-            return "\""+resolvedPath+"\"";
         }
-        else {
-            console.log("Unable to resolve metapath: "+metapath);
-            return "\""+metapath+"\"";
-        }
-    })
+    }
+    return source
+        .replace(/"(\s*metapath:\/\/[^"?]+)/g, buildReplacer("\""))
+        .replace(/'(\s*metapath:\/\/[^'?]+)/g, buildReplacer("\'"))
 }
 
 var getAbsoluteMap = module.exports.getAbsoluteMap = function(metapaths) {
