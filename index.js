@@ -317,8 +317,8 @@ var replace = module.exports.replace = function(source, sourcePath, metapaths, t
         }
     }
     return source
-        .replace(/"(\s*metapath:\/\/[^"?]+)/g, buildReplacer("\""))
-        .replace(/'(\s*metapath:\/\/[^'?]+)/g, buildReplacer("\'"))
+        .replace(/"(\s*metapath:\/\/[^"?#]+)/g, buildReplacer("\""))
+        .replace(/'(\s*metapath:\/\/[^'?#]+)/g, buildReplacer("\'"))
 }
 
 var getAbsoluteMap = module.exports.getAbsoluteMap = function(metapaths) {
