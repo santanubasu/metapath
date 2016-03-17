@@ -1,15 +1,18 @@
 Error.stackTraceLimit = 1000;
-Object.defineProperty(global, "__stack", {
-    get: function(){
-        var orig = Error.prepareStackTrace;
-        Error.prepareStackTrace = function(_, stack){ return stack; };
-        var err = new Error;
-        Error.captureStackTrace(err, arguments.callee);
-        var stack = err.stack;
-        Error.prepareStackTrace = orig;
-        return stack;
-    }
-});
+
+if (!__stack) {
+    Object.defineProperty(global, "__stack", {
+        get: function(){
+            var orig = Error.prepareStackTrace;
+            Error.prepareStackTrace = function(_, stack){ return stack; };
+            var err = new Error;
+            Error.captureStackTrace(err, arguments.callee);
+            var stack = err.stack;
+            Error.prepareStackTrace = orig;
+            return stack;
+        }
+    });
+}
 
 var path = require("path");
 var resolve = require("resolve");
