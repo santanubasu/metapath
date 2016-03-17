@@ -1,6 +1,6 @@
 Error.stackTraceLimit = 1000;
 
-if (!__stack) {
+if (!global.__stack) {
     Object.defineProperty(global, "__stack", {
         get: function(){
             var orig = Error.prepareStackTrace;
