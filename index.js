@@ -1,5 +1,13 @@
 Error.stackTraceLimit = 1000;
 
+if (!global._metapath) {
+    global._metapath = {
+        tenantCache:{},
+        tenantMetapaths:{},
+        activeTenant:""
+    };
+}
+
 if (!global.__stack) {
     Object.defineProperty(global, "__stack", {
         get: function(){
@@ -21,10 +29,7 @@ var extend = require("node.extend");
 var check = require("check-more-types");
 var Module = require("module");
 
-var tenantCache = {};
-var tenantMetapaths = {};
-var activeTenant = "";
-tenantCache[activeTenant] = {};
+global._metapath.tenantCache[global._metapath.activeTenant] = {};
 
 function getCallerDirname(skip) {
     return path.dirname(getCallerFilename())
@@ -111,18 +116,18 @@ module.exports = {
             options = options||{};
 
             if (_.isString(tenantArg)) {
-                activeTenant = tenantArg;
+                global._metapath.activeTenant = tenantArg;
             }
 
             var nameToLoad;
             var result;
 
             try {
-                if (tenantMetapaths[activeTenant] && name in tenantMetapaths[activeTenant]) {
+                if (global._metapath.tenantMetapaths[global._metapath.activeTenant] && name in global._metapath.tenantMetapaths[global._metapath.activeTenant]) {
                     var callerFilename = getCallerFilename();
-                    var absolutePath = tenantMetapaths[activeTenant][name].absolute;
-                    if (callerFilename in tenantMetapaths[activeTenant][name].supers.absolute) {
-                        absolutePath = tenantMetapaths[activeTenant][name].supers.absolute[callerFilename].absolute;
+                    var absolutePath = global._metapath.tenantMetapaths[global._metapath.activeTenant][name].absolute;
+                    if (callerFilename in global._metapath.tenantMetapaths[global._metapath.activeTenant][name].supers.absolute) {
+                        absolutePath = global._metapath.tenantMetapaths[global._metapath.activeTenant][name].supers.absolute[callerFilename].absolute;
                     }
                     nameToLoad = Module._resolveFilename(absolutePath, this);
                 }
@@ -135,12 +140,12 @@ module.exports = {
             }
 
             try {
-                if (tenantCache[activeTenant] && nameToLoad in tenantCache[activeTenant]) {
-                    result = tenantCache[activeTenant][nameToLoad];
+                if (global._metapath.tenantCache[global._metapath.activeTenant] && nameToLoad in global._metapath.tenantCache[global._metapath.activeTenant]) {
+                    result = global._metapath.tenantCache[global._metapath.activeTenant][nameToLoad];
                 }
                 else {
                     result = Module._load(nameToLoad, this);
-                    tenantCache[activeTenant][nameToLoad] = result;
+                    global._metapath.tenantCache[global._metapath.activeTenant][nameToLoad] = result;
                     delete require.cache[nameToLoad];
                 }
             }
@@ -172,14 +177,14 @@ module.exports = {
         return dynamicRequire;
     }),
     configureTenant:function(tenant, tenantMetapath) {
-        tenantCache[tenant] = {};
-        tenantMetapaths[tenant] = tenantMetapath;
+        global._metapath.tenantCache[tenant] = {};
+        global._metapath.tenantMetapaths[tenant] = tenantMetapath;
     },
     activateTenant:function(tenant) {
-        activeTenant = tenant;
+        global._metapath.activeTenant = tenant;
     },
-    import:function(dependency) {
-        var callerDirname = getCallerDirname(1);
+    import:function(dependency, root) {
+        var callerDirname = root?root:getCallerDirname(1);
         var dependencyRoot = resolveDependencyRoot(dependency, callerDirname);
         return prefix(
             require(path.join(dependencyRoot, "metapath.js")),
@@ -187,10 +192,10 @@ module.exports = {
             path.relative(callerDirname, dependencyRoot)+"/"
         );
     },
-    from:function(target) {
+    from:function(target, root) {
         var paths = [];
         var prefixes = [];
-        var callerDirname = getCallerDirname(1);
+        var callerDirname = root?root:getCallerDirname(1);
         var base;
         var pathPrefix;
         if (target.indexOf("/")!==-1) {
